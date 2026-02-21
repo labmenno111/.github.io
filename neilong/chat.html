@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><link rel="icon" href="/icon.jpg" type="image/jpeg">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 聊天</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f9fafb; }
+        .think-block {
+            background-color: #f3f4f6;
+            border-left: 4px solid #9ca3af;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            font-style: italic;
+            white-space: pre-wrap;
+            word-break: break-word;
+            animation: fadeInUp 0.4s ease-out;
+        }
+        .response-block {
+            background-color: #1e1e1e;
+            color: #f3f4f6;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+            animation: fadeInUp 0.4s ease-out;
+        }
+        @keyframes fadeInUp {
+            0% { opacity: 0; transform: translateY(8px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        .message-user {
+            background-color: #dbeafe;
+            color: #1e3a8a;
+            padding: 0.75rem 1rem;
+            border-radius: 1rem 1rem 0 1rem;
+            margin-bottom: 0.5rem;
+            max-width: 80%;
+            margin-left: auto;
+        }
+        .message-assistant {
+            background-color: #e5e7eb;
+            color: #1f2937;
+            padding: 0.75rem 1rem;
+            border-radius: 1rem 1rem 1rem 0;
+            margin-bottom: 0.5rem;
+            max-width: 80%;
+            margin-right: auto;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <!-- 导航栏 -->
+    <nav class="bg-white shadow-sm fixed w-full z-10 top-0">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <a href="index.html" class="text-2xl font-bold text-indigo-600">SED</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 聊天区域 -->
+    <section class="pt-24 pb-12 min-h-screen bg-white">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-6">
+                <h2 class="text-3xl font-bold text-gray-900">AI 聊天</h2>
+                <p class="mt-2 text-gray-500">支持本地模型与云端模型自由切换</p>
+            </div>
+
+            <!-- 模型选择器 -->
+            <div class="flex justify-center gap-6 mb-4">
+                <label class="flex items-center gap-1">
+                    <input type="radio" name="modelSource" value="local" checked> 🖥️ 本地模型 (deepseek-r1:7b)
+                </label>
+                <label class="flex items-center gap-1">
+                    <input type="radio" name="modelSource" value="cloud"> ☁️ 云端模型 (DeepSeek-V3.2)
+                </label>
+            </div>
+
+            <!-- 预设问题按钮 -->
+            <div class="flex flex-wrap gap-2 mb-4 justify-center">
+                <button onclick="setPrompt('讲个笑话')" class="px-3 py-1 bg-gray-100 rounded text-sm hover:bg-gray-200 transition">😄 讲个笑话</button>
+                <button onclick="setPrompt('用一句话安慰我')" class="px-3 py-1 bg-gray-100 rounded text-sm hover:bg-gray-200 transition">💬 安慰我</button>
+                <button onclick="setPrompt('简单介绍一下你自己')" class="px-3 py-1 bg-gray-100 rounded text-sm hover:bg-gray-200 transition">🤖 自我介绍</button>
+                <button onclick="clearHistory()" class="px-3 py-1 bg-red-100 rounded text-sm hover:bg-red-200 transition">🗑️ 清空对话</button>
+            </div>
+
+            <!-- 对话历史区 -->
+            <div id="chat-history" class="space-y-2 mb-4 max-h-96 overflow-y-auto p-2"></div>
+
+            <!-- 输入区 -->
+            <div class="bg-gray-50 p-6 rounded-2xl shadow-md">
+                <textarea id="ai-input" rows="3" class="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition resize-none" placeholder="输入你的问题..."></textarea>
+                <div class="flex justify-end mt-4">
+                    <button onclick="askAI()" class="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition shadow-md">
+                        发送
+                    </button>
+                </div>
+            </div>
+
+            <!-- 临时思考区域 -->
+            <div id="think-container" class="think-block hidden mt-4"></div>
+        </div>
+    </section>
+
+    <!-- 页脚 -->
+    <footer class="bg-gray-900 text-white py-8">
+        <div class="max-w-7xl mx-auto px-4 text-center">
+            <p class="text-gray-400">© 2026 sed. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script>
+        // 多轮对话历史
+        let messages = [];
+
+        // 预设问题
+        function setPrompt(text) {
+            document.getElementById('ai-input').value = text;
+        }
+
+        // 清空历史
+        function clearHistory() {
+            messages = [];
+            document.getElementById('chat-history').innerHTML = '';
+        }
+
+        // 添加消息到历史显示区
+        function addMessageToHistory(role, content) {
+            const historyDiv = document.getElementById('chat-history');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = role === 'user' ? 'message-user' : 'message-assistant';
+            msgDiv.textContent = content;
+            historyDiv.appendChild(msgDiv);
+            historyDiv.scrollTop = historyDiv.scrollHeight;
+        }
+
+        // 主函数
+        async function askAI() {
+            const userInput = document.getElementById('ai-input').value.trim();
+            if (!userInput) return;
+
+            const modelSource = document.querySelector('input[name="modelSource"]:checked').value;
+            const thinkDiv = document.getElementById('think-container');
+
+            // 显示用户消息
+            addMessageToHistory('user', userInput);
+            messages.push({ role: 'user', content: userInput });
+
+            // 清空输入
+            document.getElementById('ai-input').value = '';
+
+            // 显示思考中
+            thinkDiv.innerText = '思考中...';
+            thinkDiv.classList.remove('hidden');
+
+            try {
+                let response, data, fullText;
+
+                if (modelSource === 'local') {
+                    // 调用本地 Ollama（注意：TryCloudflare 地址每次重启都会变，需要手动更新）
+                    response = await fetch('https://assembly-bent-spatial-hidden.trycloudflare.com/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            model: 'deepseek-r1:7b',
+                            messages: messages,
+                            stream: false
+                        })
+                    });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    data = await response.json();
+                    fullText = data.message.content;
+                } else {
+                    // 调用 SiliconFlow 云端（注意：API密钥在前端暴露不安全，建议后续改成后端转发）
+                    response = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer sk-uzsumgkojxcapigeowrwltgdfkvxzgyfnizowexituokqefm' // 请替换为你的真实 Key
+                        },
+                        body: JSON.stringify({
+                            model: 'deepseek-ai/DeepSeek-V3.2',  // 确保模型 ID 正确
+                            messages: messages,
+                            stream: false,
+                            max_tokens: 2048
+                        })
+                    });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    data = await response.json();
+                    fullText = data.choices[0].message.content;
+                }
+
+                // 处理思考标签（可选）
+                const thinkRegex = /<think>([\s\S]*?)<\/think>/i;
+                const match = fullText.match(thinkRegex);
+                let cleanResponse = fullText;
+                if (match) {
+                    const thinkContent = match[1].trim();
+                    if (thinkContent) thinkDiv.innerText = thinkContent;
+                    else thinkDiv.classList.add('hidden');
+                    cleanResponse = fullText.replace(/<think>[\s\S]*?<\/think>/i, '').trim();
+                } else {
+                    thinkDiv.classList.add('hidden');
+                }
+
+                // 保存并显示 AI 回复
+                messages.push({ role: 'assistant', content: fullText });
+                addMessageToHistory('assistant', cleanResponse || '(空回复)');
+
+                // ========== 新增：发送日志到本地服务器 ==========
+                try {
+                    await fetch('http://localhost:5000/log', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: userInput,
+                            response: fullText,
+                            model: modelSource === 'local' ? 'deepseek-r1:7b' : 'deepseek-ai/DeepSeek-V3.2',
+                            timestamp: new Date().toISOString()
+                        })
+                    });
+                } catch (logError) {
+                    console.log('日志记录失败（不影响聊天）', logError);
+                }
+                // ==============================================
+
+            } catch (error) {
+                thinkDiv.innerText = '出错了：' + error.message;
+            }
+        }
+
+        // 支持回车发送
+        document.getElementById('ai-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                askAI();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><link rel="icon" href="/icon.jpg" type="image/jpeg">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Empire - 嵌入式网页游戏</title>
+    <style>
+        :root {
+            --bg-color: #1a1a2d;
+            --panel-bg: #252540;
+            --text-color: #e0e0e0;
+            --accent-color: #4CAF50;
+            --btn-hover: #45a049;
+            --log-color: #a0a0b0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            height: 100vh;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        /* 游戏主容器 */
+        #game-container {
+            display: grid;
+            grid-template-columns: 250px 1fr 300px;
+            gap: 20px;
+            width: 100%;
+            max-width: 1200px;
+            height: 100%;
+            background-color: var(--bg-color);
+        }
+
+        /* 通用面板样式 */
+        .panel {
+            background-color: var(--panel-bg);
+            border-radius: 8px;
+            padding: 15px;
+            overflow-y: auto;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+        }
+
+        h2 { margin-top: 0; font-size: 1.2rem; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        h3 { font-size: 1rem; color: var(--accent-color); margin: 10px 0 5px 0; }
+
+        /* 资源列表 */
+        .resource-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #333;
+        }
+
+        /* 按钮区域 */
+        .action-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 10px;
+        }
+
+        button {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-weight: bold;
+        }
+
+        button:hover { background-color: var(--btn-hover); }
+        button:disabled { background-color: #555; cursor: not-allowed; opacity: 0.7; }
+        
+        .tooltip { font-size: 0.8rem; color: #ccc; display: block; margin-top: 4px; font-weight: normal;}
+
+        /* 日志区域 */
+        #log-container {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: var(--log-color);
+        }
+        .log-entry { margin-bottom: 5px; border-left: 2px solid #555; padding-left: 8px; }
+        .log-entry.new { animation: fadeIn 0.5s; border-left-color: var(--accent-color); color: #fff; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+
+        /* 顶部控制栏 */
+        .controls {
+            margin-top: auto;
+            border-top: 1px solid #444;
+            padding-top: 10px;
+            display: flex;
+            gap: 10px;
+        }
+        .controls button { background-color: #555; font-size: 0.8rem; }
+        .controls button:hover { background-color: #666; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <!-- 左侧：资源面板 -->
+    <div class="panel">
+        <h2>📦 资源库存</h2>
+        <div id="resources-list">
+            <!-- 动态生成 -->
+        </div>
+        <div class="controls">
+            <button onclick="Game.saveGame()">保存进度</button>
+            <button onclick="Game.resetGame()">重置游戏</button>
+        </div>
+    </div>
+
+    <!-- 中间：操作面板 -->
+    <div class="panel">
+        <h2>🛠️ 帝国建设</h2>
+        
+        <h3>基础采集</h3>
+        <div class="action-grid" id="actions-gather">
+            <button onclick="Game.actions.gatherWood()">
+                伐木
+                <span class="tooltip">+1 木材</span>
+            </button>
+            <button onclick="Game.actions.gatherStone()">
+                采石
+                <span class="tooltip">+1 石头</span>
+            </button>
+        </div>
+
+        <h3>建筑 (自动生产)</h3>
+        <div class="action-grid" id="actions-build">
+            <!-- 动态生成 -->
+        </div>
+
+        <h3>科技与升级</h3>
+        <div class="action-grid" id="actions-tech">
+            <button id="btn-tech-axes" onclick="Game.techs.unlockAxes()">
+                研发：铁斧
+                <span class="tooltip">消耗: 50木材 | 伐木效率 x2</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- 右侧：日志与说明 -->
+    <div class="panel">
+        <h2>📜 帝国编年史</h2>
+        <div id="log-container"></div>
+    </div>
+</div>
+
+<script>
+/**
+ * 游戏核心逻辑
+ */
+const Game = {
+    // 游戏时钟
+    tickRate: 1000, 
+    timer: null,
+
+    // 游戏状态数据
+    state: {
+        resources: {
+            wood: 0,
+            stone: 0,
+            food: 0,
+            population: 0
+        },
+        buildings: {
+            lumberMill: { count: 0, cost: { wood: 15 }, output: { wood: 1 }, name: "伐木场" },
+            quarry: { count: 0, cost: { wood: 30, stone: 0 }, output: { stone: 0.5 }, name: "采石场" },
+            house: { count: 0, cost: { wood: 50, stone: 10 }, output: { population: 1 }, name: "民居" } // 特殊逻辑：提供人口上限
+        },
+        techs: {
+            ironAxes: false
+        },
+        stats: {
+            startTime: Date.now(),
+            totalClicks: 0
+        }
+    },
+
+    // 初始化
+    init: function() {
+        this.loadGame();
+        this.ui.init();
+        this.startGameLoop();
+        this.log("欢迎来到 Web Empire。点击‘伐木’开始建立你的文明。");
+    },
+
+    // 游戏主循环
+    startGameLoop: function() {
+        if(this.timer) clearInterval(this.timer);
+        this.timer = setInterval(() => {
+            this.tick();
+        }, this.tickRate);
+    },
+
+    // 每一跳的逻辑
+    tick: function() {
+        // 计算产出
+        const woodGain = this.state.buildings.lumberMill.count * this.state.buildings.lumberMill.output.wood;
+        const stoneGain = this.state.buildings.quarry.count * this.state.buildings.quarry.output.stone;
+
+        this.addResource('wood', woodGain);
+        this.addResource('stone', stoneGain);
+
+        this.ui.update();
+        
+        // 自动保存（每30秒）
+        if (Date.now() % 30000 < 1000) this.saveGame();
+    },
+
+    // 资源操作
+    addResource: function(type, amount) {
+        if (!amount) return;
+        this.state.resources[type] += amount;
+        // 浮点数修正
+        this.state.resources[type] = Math.round(this.state.resources[type] * 10) / 10;
+        this.ui.updateResources();
+    },
+
+    removeResource: function(type, amount) {
+        if (this.state.resources[type] >= amount) {
+            this.state.resources[type] -= amount;
+            this.ui.updateResources();
+            return true;
+        }
+        return false;
+    },
+
+    checkCost: function(costObj) {
+        for (let key in costObj) {
+            if (this.state.resources[key] < costObj[key]) return false;
+        }
+        return true;
+    },
+
+    payCost: function(costObj) {
+        if (!this.checkCost(costObj)) return false;
+        for (let key in costObj) {
+            this.removeResource(key, costObj[key]);
+        }
+        return true;
+    },
+
+    // 手动操作定义
+    actions: {
+        gatherWood: function() {
+            let amount = 1;
+            if (Game.state.techs.ironAxes) amount = 2;
+            Game.addResource('wood', amount);
+            Game.state.stats.totalClicks++;
+            Game.ui.checkUnlock();
+        },
+        gatherStone: function() {
+            Game.addResource('stone', 1);
+            Game.state.stats.totalClicks++;
+        },
+        build: function(buildingKey) {
+            const building = Game.state.buildings[buildingKey];
+            if (Game.payCost(building.cost)) {
+                building.count++;
+                // 成本递增算法 (指数增长 1.15倍)
+                for (let res in building.cost) {
+                    building.cost[res] = Math.floor(building.cost[res] * 1.15);
+                }
+                Game.log(`建造了 ${building.name} (当前数量: ${building.count})`);
+                Game.ui.renderBuildings(); // 重新渲染以更新价格
+            } else {
+                Game.log("资源不足！");
+            }
+        }
+    },
+
+    // 科技系统
+    techs: {
+        unlockAxes: function() {
+            const cost = { wood: 50 };
+            if (Game.state.techs.ironAxes) return;
+            if (Game.payCost(cost)) {
+                Game.state.techs.ironAxes = true;
+                Game.log("科技研发完成：铁斧！手动伐木效率翻倍。");
+                document.getElementById('btn-tech-axes').style.display = 'none';
+            }
+        }
+    },
+
+    // 日志系统
+    log: function(msg) {
+        const container = document.getElementById('log-container');
+        const entry = document.createElement('div');
+        entry.className = 'log-entry new';
+        const time = new Date().toLocaleTimeString();
+        entry.innerText = `[${time}] ${msg}`;
+        container.insertBefore(entry, container.firstChild);
+        
+        // 限制日志数量
+        if (container.children.length > 50) {
+            container.removeChild(container.lastChild);
+        }
+    },
+
+    // 存档系统
+    saveGame: function() {
+        const saveString = JSON.stringify(this.state);
+        localStorage.setItem('webEmpireSave', saveString);
+        this.log("游戏进度已保存。");
+    },
+
+    loadGame: function() {
+        const saveString = localStorage.getItem('webEmpireSave');
+        if (saveString) {
+            try {
+                const savedState = JSON.parse(saveString);
+                // 简单的合并策略（实际开发需要更复杂的版本迁移逻辑）
+                this.state = { ...this.state, ...savedState }; 
+                this.log("欢迎回来，领主。");
+            } catch (e) {
+                console.error("存档损坏");
+            }
+        }
+    },
+
+    resetGame: function() {
+        if(confirm("确定要重置所有进度吗？")) {
+            localStorage.removeItem('webEmpireSave');
+            location.reload();
+        }
+    },
+
+    // UI 管理
+    ui: {
+        init: function() {
+            this.renderBuildings();
+            this.updateResources();
+            
+            // 初始隐藏未解锁内容
+            if (Game.state.techs.ironAxes) document.getElementById('btn-tech-axes').style.display = 'none';
+        },
+
+        renderBuildings: function() {
+            const container = document.getElementById('actions-build');
+            container.innerHTML = ''; // 清空重绘
+            
+            for (let key in Game.state.buildings) {
+                const b = Game.state.buildings[key];
+                const btn = document.createElement('button');
+                
+                // 格式化成本文本
+                let costText = Object.entries(b.cost).map(([k, v]) => `${Game.ui.translate(k)}:${v}`).join(', ');
+                let outputText = Object.entries(b.output).map(([k, v]) => `${v}/秒 ${Game.ui.translate(k)}`).join(', ');
+
+                btn.innerHTML = `
+                    ${b.name} <br>
+                    <span class="tooltip">成本: ${costText}</span>
+                    <span class="tooltip">产出: ${outputText}</span>
+                    <span class="tooltip" style="color:yellow">拥有: ${b.count}</span>
+                `;
+                btn.onclick = () => Game.actions.build(key);
+                
+                // 检查是否足够资源来高亮/禁用 (简单的UI反馈)
+                if (!Game.checkCost(b.cost)) {
+                    btn.style.opacity = '0.6';
+                }
+
+                container.appendChild(btn);
+            }
+        },
+
+        updateResources: function() {
+            const list = document.getElementById('resources-list');
+            list.innerHTML = '';
+            for (let key in Game.state.resources) {
+                const div = document.createElement('div');
+                div.className = 'resource-item';
+                div.innerHTML = `<span>${this.translate(key)}</span> <span>${Math.floor(Game.state.resources[key])}</span>`;
+                list.appendChild(div);
+            }
+            
+            // 实时检查建筑按钮状态
+            this.renderBuildings();
+        },
+
+        update: function() {
+            this.updateResources();
+        },
+
+        checkUnlock: function() {
+            // 可以在这里添加解锁逻辑，例如：木头>10 显示采石场
+        },
+
+        translate: function(key) {
+            const map = {
+                'wood': '木材',
+                'stone': '石头',
+                'food': '食物',
+                'population': '人口'
+            };
+            return map[key] || key;
+        }
+    }
+};
+
+// 启动游戏
+window.onload = function() {
+    Game.init();
+};
+</script>
+
+</body>
+</html>
